@@ -2,21 +2,26 @@ import os
 import logging
 import yt_dlp
 
+from flask import Flask, request
 from telegram import Update
 from telegram.ext import (
     Application,
     MessageHandler,
     ContextTypes,
-    filters
+    filters,
 )
 
-# យក Token ពី Environment Variable
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+BOT_TOKEN = os.getenv("8825680908:AAGtIitkyTME5DA8gFGquhA6KuOqfoNSML8")
+WEBHOOK_URL = os.getenv("https://pinterest-download-1-di66.onrender.com")
 
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
     level=logging.INFO
 )
+
+app_flask = Flask(__name__)
+telegram_app = Application.builder().token(BOT_TOKEN).build()
+
 
 async def download_pinterest(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
@@ -59,29 +64,42 @@ async def download_pinterest(update: Update, context: ContextTypes.DEFAULT_TYPE)
         logging.exception(e)
         await update.message.reply_text(f"❌ Error:\n{e}")
 
-def main():
-    try:
-        if not BOT_TOKEN:
-            raise ValueError("BOT_TOKEN not found")
 
-        os.makedirs("downloads", exist_ok=True)
+telegram_app.add_handler(
+    MessageHandler(filters.TEXT & ~filters.COMMAND, download_pinterest)
+)
 
-        app = Application.builder().token(BOT_TOKEN).build()
 
-        app.add_handler(
-            MessageHandler(
-                filters.TEXT & ~filters.COMMAND,
-                download_pinterest
-            )
-        )
+@app_flask.route("/")
+def home():
+    return "Bot is running!"
 
-        print("Bot Running...")
 
-        app.run_polling()
+@app_flask.route(f"/{BOT_TOKEN}", methods=["POST"])
+async def webhook():
+    data = request.get_json(force=True)
 
-    except Exception as e:
-        print("STARTUP ERROR:", e)
-        raise
+    update = Update.de_json(data, telegram_app.bot)
+    await telegram_app.process_update(update)
+
+    return "OK"
+
+
+async def setup():
+    await telegram_app.initialize()
+    await telegram_app.bot.set_webhook(
+        url=f"{WEBHOOK_URL}/{BOT_TOKEN}"
+    )
+
 
 if __name__ == "__main__":
-    main()
+    import asyncio
+
+    asyncio.run(setup())
+
+    port = int(os.environ.get("PORT", 10000))
+
+    app_flask.run(
+        host="0.0.0.0",
+        port=port
+    )
