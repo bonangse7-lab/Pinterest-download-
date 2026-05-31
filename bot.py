@@ -1,11 +1,27 @@
 import os
+import logging
 import yt_dlp
-from telegram import Update
-from telegram.ext import Application, MessageHandler, ContextTypes, filters
 
-BOT_TOKEN = "8825680908:AAGtIitkyTME5DA8gFGquhA6KuOqfoNSML8"
+from telegram import Update
+from telegram.ext import (
+    Application,
+    MessageHandler,
+    ContextTypes,
+    filters
+)
+
+# យក Token ពី Environment Variable
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+
+logging.basicConfig(
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
 
 async def download_pinterest(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.text:
+        return
+
     url = update.message.text.strip()
 
     if "pinterest.com" not in url and "pin.it" not in url:
@@ -13,36 +29,59 @@ async def download_pinterest(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     try:
+        os.makedirs("downloads", exist_ok=True)
+
+        msg = await update.message.reply_text("⏳ កំពុងទាញយក...")
+
         ydl_opts = {
+            "format": "best[ext=mp4]/best",
             "outtmpl": "downloads/%(id)s.%(ext)s",
-            "format": "mp4/best",
+            "quiet": True,
+            "noplaylist": True,
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
             file_path = ydl.prepare_filename(info)
 
-        await update.message.reply_video(
-            video=open(file_path, "rb"),
-            caption="Pinterest Video Downloaded ✅"
-        )
+        with open(file_path, "rb") as video:
+            await update.message.reply_video(
+                video=video,
+                caption="✅ Pinterest Video Downloaded"
+            )
 
-        os.remove(file_path)
+        if os.path.exists(file_path):
+            os.remove(file_path)
+
+        await msg.delete()
 
     except Exception as e:
-        await update.message.reply_text(f"Error: {str(e)}")
+        logging.exception(e)
+        await update.message.reply_text(f"❌ Error:\n{e}")
 
 def main():
-    os.makedirs("downloads", exist_ok=True)
+    try:
+        if not BOT_TOKEN:
+            raise ValueError("BOT_TOKEN not found")
 
-    app = Application.builder().token(BOT_TOKEN).build()
+        os.makedirs("downloads", exist_ok=True)
 
-    app.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, download_pinterest)
-    )
+        app = Application.builder().token(BOT_TOKEN).build()
 
-    print("Bot Running...")
-    app.run_polling()
+        app.add_handler(
+            MessageHandler(
+                filters.TEXT & ~filters.COMMAND,
+                download_pinterest
+            )
+        )
+
+        print("Bot Running...")
+
+        app.run_polling()
+
+    except Exception as e:
+        print("STARTUP ERROR:", e)
+        raise
 
 if __name__ == "__main__":
     main()
